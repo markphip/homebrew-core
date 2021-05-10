@@ -5,7 +5,7 @@ class Subversion < Formula
   mirror "https://archive.apache.org/dist/subversion/subversion-1.14.1.tar.bz2"
   sha256 "2c5da93c255d2e5569fa91d92457fdb65396b0666fad4fd59b22e154d986e1a9"
   license "Apache-2.0"
-  revision 1
+  revision 2
 
   bottle do
     sha256 arm64_big_sur: "cc10a37f931098a527772624566986313996921ef4db503574894e7c879a148e"
@@ -137,34 +137,32 @@ class Subversion < Formula
     system "make", "javahl"
     system "make", "install-javahl"
 
-    if Hardware::CPU.intel?
-      perl_archlib = Utils.safe_popen_read("perl", "-MConfig", "-e", "print $Config{archlib}")
-      perl_core = Pathname.new(perl_archlib)/"CORE"
+    perl_archlib = Utils.safe_popen_read("perl", "-MConfig", "-e", "print $Config{archlib}")
+    perl_core = Pathname.new(perl_archlib)/"CORE"
+    perl_extern_h = perl_core/"EXTERN.h"
+
+    unless perl_extern_h.exist?
+      # No EXTERN.h, maybe it's system perl
+      perl_version = Utils.safe_popen_read("perl", "--version")[/v(\d+\.\d+)(?:\.\d+)?/, 1]
+      perl_core = MacOS.sdk_path/"System/Library/Perl"/perl_version/"darwin-thread-multi-2level/CORE"
       perl_extern_h = perl_core/"EXTERN.h"
-
-      unless perl_extern_h.exist?
-        # No EXTERN.h, maybe it's system perl
-        perl_version = Utils.safe_popen_read("perl", "--version")[/v(\d+\.\d+)(?:\.\d+)?/, 1]
-        perl_core = MacOS.sdk_path/"System/Library/Perl"/perl_version/"darwin-thread-multi-2level/CORE"
-        perl_extern_h = perl_core/"EXTERN.h"
-      end
-
-      onoe "'#{perl_extern_h}' does not exist" unless perl_extern_h.exist?
-
-      inreplace "Makefile" do |s|
-        s.change_make_var! "SWIG_PL_INCLUDES",
-          "$(SWIG_INCLUDES) -arch x86_64 -g -pipe -fno-common " \
-          "-DPERL_DARWIN -fno-strict-aliasing -I#{HOMEBREW_PREFIX}/include -I#{perl_core}"
-      end
-      system "make", "swig-pl"
-      system "make", "install-swig-pl"
-
-      # This is only created when building against system Perl, but it isn't
-      # purged by Homebrew's post-install cleaner because that doesn't check
-      # "Library" directories. It is however pointless to keep around as it
-      # only contains the perllocal.pod installation file.
-      rm_rf prefix/"Library/Perl"
     end
+
+    onoe "'#{perl_extern_h}' does not exist" unless perl_extern_h.exist?
+
+    inreplace "Makefile" do |s|
+      s.change_make_var! "SWIG_PL_INCLUDES",
+        "$(SWIG_INCLUDES) -arch x86_64 -g -pipe -fno-common " \
+        "-DPERL_DARWIN -fno-strict-aliasing -I#{HOMEBREW_PREFIX}/include -I#{perl_core}"
+    end
+    system "make", "swig-pl"
+    system "make", "install-swig-pl"
+
+    # This is only created when building against system Perl, but it isn't
+    # purged by Homebrew's post-install cleaner because that doesn't check
+    # "Library" directories. It is however pointless to keep around as it
+    # only contains the perllocal.pod installation file.
+    rm_rf prefix/"Library/Perl"
   end
 
   def caveats
@@ -185,11 +183,9 @@ class Subversion < Formula
     system "#{bin}/svnadmin", "create", "test"
     system "#{bin}/svnadmin", "verify", "test"
 
-    if Hardware::CPU.intel?
-      perl_version = Utils.safe_popen_read("/usr/bin/perl", "--version")[/v(\d+\.\d+(?:\.\d+)?)/, 1]
-      ENV["PERL5LIB"] = "#{lib}/perl5/site_perl/#{perl_version}/darwin-thread-multi-2level"
-      system "/usr/bin/perl", "-e", "use SVN::Client; new SVN::Client()"
-    end
+    perl_version = Utils.safe_popen_read("/usr/bin/perl", "--version")[/v(\d+\.\d+(?:\.\d+)?)/, 1]
+    ENV["PERL5LIB"] = "#{lib}/perl5/site_perl/#{perl_version}/darwin-thread-multi-2level"
+    system "/usr/bin/perl", "-e", "use SVN::Client; new SVN::Client()"
   end
 end
 
